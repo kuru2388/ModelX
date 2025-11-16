@@ -1129,19 +1129,173 @@ print(f"Training Samples: {len(X_train_final):,}")
 print(f"Test Samples: {len(X_test):,}")
 print("\n✓ All steps completed successfully!")
 
-# Test prediction
+# Example patient data (test case)
 example_input = {
-    'BIRTHYR': 1950, 'SEX': 1, 'RACE': 1, 'HISPANIC': 0, 'EDUC': 16,
-    'MARISTAT': 1, 'RESIDENC': 1, 'INLIVWTH': 1, 'INVISITS': 2, 'INCALLS': 1,
-    'TOBAC30': 0, 'TOBAC100': 0, 'SMOKYRS': 0, 'ALCOCCAS': 0, 'ALCFREQ': 0,
-    'CVHATT': 0, 'CVAFIB': 0, 'CBSTROKE': 0, 'CBTIA': 0,
-    'DIABETES': 0, 'HYPERTEN': 0, 'HYPERCHO': 0, 'THYROID': 0,
-    'ARTHRIT': 0, 'APNEA': 0, 'INSOMN': 0,
-    'PTSD': 0, 'ANXIETY': 0, 'DEP2YRS': 0,
-    'NACCMOM': 0, 'NACCDAD': 0, 'NACCFAM': 0
+    'BIRTHYR': 1945,      # Age: ~79 years (higher risk)
+    'SEX': 1,             # Male
+    'RACE': 1,            # White
+    'HISPANIC': 0,        # Not Hispanic
+    'EDUC': 12,           # High school education (12 years)
+    'MARISTAT': 1,        # Married
+    'RESIDENC': 1,        # Lives at home
+    'INLIVWTH': 1,        # Lives with someone
+    'INVISITS': 2,        # Moderate social visits
+    'INCALLS': 1,         # Some phone contact
+    'TOBAC30': 0,         # No recent smoking
+    'TOBAC100': 1,        # Past smoker (>100 cigarettes lifetime)
+    'SMOKYRS': 15,        # Smoked for 15 years
+    'ALCOCCAS': 1,        # Occasional alcohol
+    'ALCFREQ': 2,         # Moderate frequency
+    'CVHATT': 1,          # History of heart attack
+    'CVAFIB': 0,          # No atrial fibrillation
+    'CBSTROKE': 0,        # No stroke
+    'CBTIA': 0,           # No TIA
+    'DIABETES': 0,        # No diabetes
+    'HYPERTEN': 1,        # Has hypertension
+    'HYPERCHO': 1,        # Has high cholesterol
+    'THYROID': 0,         # No thyroid issues
+    'ARTHRIT': 1,         # Has arthritis
+    'APNEA': 0,           # No sleep apnea
+    'INSOMN': 0,          # No insomnia
+    'PTSD': 0,            # No PTSD
+    'ANXIETY': 0,         # No anxiety
+    'DEP2YRS': 0,         # No depression
+    'NACCMOM': 1,         # Mother had dementia
+    'NACCDAD': 0,         # Father did not have dementia
+    'NACCFAM': 1          # Family history of dementia
 }
 
+print("\nPatient Profile:")
+print("-"*80)
+print(f"  Age: {2024 - example_input['BIRTHYR']} years")
+print(f"  Education: {example_input['EDUC']} years (High school)")
+print(f"  Living Situation: {'Lives with family' if example_input['INLIVWTH'] == 1 else 'Lives alone'}")
+print(f"  Marital Status: {'Married' if example_input['MARISTAT'] == 1 else 'Not married'}")
+print(f"\n  Risk Factors:")
+print(f"    • Cardiovascular: Heart attack history, Hypertension, High cholesterol")
+print(f"    • Lifestyle: Past smoker (15 years)")
+print(f"    • Family History: Mother had dementia")
+print(f"    • Other: Arthritis")
+
+# Create prediction function
+def predict_dementia_risk(patient_data):
+    """
+    Predict dementia risk for a patient using non-medical variables
+    
+    Returns:
+        dict: {
+            'probability': float (0-100),
+            'classification': str ('At risk' or 'Not at risk')
+        }
+    """
+    # Create DataFrame from input
+    input_df = pd.DataFrame([patient_data])
+    
+    # Apply same feature engineering as training
+    if 'BIRTHYR' in input_df.columns:
+        input_df['AGE'] = 2024 - input_df['BIRTHYR']
+        input_df['age_squared'] = input_df['AGE'] ** 2
+        input_df['age_group'] = pd.cut(input_df['AGE'],
+                                       bins=[0, 60, 70, 80, 90, 150],
+                                       labels=['<60', '60-70', '70-80', '80-90', '90+'])
+    
+    if 'EDUC' in input_df.columns:
+        input_df['educ_group'] = pd.cut(input_df['EDUC'],
+                                       bins=[0, 12, 16, 30],
+                                       labels=['<12yrs', '12-16yrs', '>16yrs'])
+        input_df['college_educated'] = (input_df['EDUC'] >= 16).astype(int)
+        input_df['high_school_grad'] = (input_df['EDUC'] >= 12).astype(int)
+    
+    # Create risk scores
+    cardio_vars = ['CVHATT', 'CVAFIB', 'CBSTROKE', 'CBTIA']
+    if all(var in input_df.columns for var in cardio_vars):
+        input_df['cardio_risk_count'] = input_df[cardio_vars].sum(axis=1)
+    
+    metabolic_vars = ['DIABETES', 'HYPERTEN', 'HYPERCHO']
+    if all(var in input_df.columns for var in metabolic_vars):
+        input_df['metabolic_risk_count'] = input_df[metabolic_vars].sum(axis=1)
+    
+    mental_vars = ['PTSD', 'ANXIETY', 'DEP2YRS']
+    if all(var in input_df.columns for var in mental_vars):
+        input_df['mental_health_count'] = input_df[mental_vars].sum(axis=1)
+    
+    family_vars = ['NACCMOM', 'NACCDAD', 'NACCFAM']
+    if all(var in input_df.columns for var in family_vars):
+        input_df['family_history_count'] = input_df[family_vars].sum(axis=1)
+    
+    # Lifestyle risk score
+    input_df['lifestyle_risk_score'] = 0
+    if 'TOBAC30' in input_df.columns:
+        input_df['lifestyle_risk_score'] += (input_df['TOBAC30'] == 1).astype(int)
+    
+    # Social engagement score
+    input_df['social_engagement_score'] = 0
+    if 'INLIVWTH' in input_df.columns:
+        input_df['social_engagement_score'] += (input_df['INLIVWTH'] == 1).astype(int)
+    if 'MARISTAT' in input_df.columns:
+        input_df['social_engagement_score'] += (input_df['MARISTAT'] == 1).astype(int)
+    
+    # Interaction feature
+    if 'AGE' in input_df.columns and 'EDUC' in input_df.columns:
+        input_df['age_educ_interaction'] = input_df['AGE'] * input_df['EDUC']
+    
+    # Encode categorical variables
+    categorical_cols = input_df.select_dtypes(include=['object', 'category']).columns.tolist()
+    if categorical_cols:
+        input_df = pd.get_dummies(input_df, columns=categorical_cols, drop_first=True)
+    
+    # Align with training features
+    missing_cols = set(X_train_final.columns) - set(input_df.columns)
+    for col in missing_cols:
+        input_df[col] = 0
+    
+    # Reorder columns to match training data
+    input_df = input_df[X_train_final.columns]
+    
+    # Scale features
+    features_to_scale_pred = [col for col in features_to_scale if col in input_df.columns]
+    if features_to_scale_pred:
+        input_df[features_to_scale_pred] = scaler.transform(input_df[features_to_scale_pred])
+    
+    # Predict
+    probability = best_model.predict_proba(input_df)[0][1]
+    prediction = best_model.predict(input_df)[0]
+    
+    risk_percentage = probability * 100
+    classification = "At risk" if prediction == 1 else "Not at risk"
+    
+    return {
+        'probability': risk_percentage,
+        'classification': classification
+    }
+
+# Make prediction
 result = predict_dementia_risk(example_input)
-print(f"\nExample Prediction:")
-print(f"  Risk Probability: {result['probability']:.2f}%")
-print(f"  Classification: {result['classification']}")
+
+print("\n" + "="*80)
+print("PREDICTION RESULT")
+print("="*80)
+print(f"\n  Your estimated risk of having dementia is {result['probability']:.1f}%")
+print(f"\n  Classification: {result['classification']}")
+print("="*80)
+
+# Interpretation
+print("\nInterpretation:")
+if result['probability'] >= 70:
+    risk_level = "HIGH"
+    interpretation = "This indicates a high probability of dementia risk based on non-medical factors."
+elif result['probability'] >= 40:
+    risk_level = "MODERATE"
+    interpretation = "This indicates a moderate probability of dementia risk based on non-medical factors."
+else:
+    risk_level = "LOW"
+    interpretation = "This indicates a low probability of dementia risk based on non-medical factors."
+
+print(f"  Risk Level: {risk_level}")
+print(f"  {interpretation}")
+print(f"\n  Note: This prediction is based on non-medical variables only.")
+print(f"  For accurate diagnosis, please consult with healthcare professionals.")
+
+print("\n" + "="*80)
+print("MODEL DEMONSTRATION COMPLETE")
+print("="*80)
